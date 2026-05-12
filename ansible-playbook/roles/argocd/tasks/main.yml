@@ -1,0 +1,168 @@
+---
+
+- name: Read kubeconfig from master
+  slurp:
+    src: /etc/rancher/rke2/rke2.yaml
+  delegate_to: master1
+  become: true
+  register: kubeconfig_raw
+
+- name: Write kubeconfig on runner
+  copy:
+    content: "{{ kubeconfig_raw.content | b64decode }}"
+    dest: "{{ kubeconfig_runner_path }}"
+  delegate_to: localhost
+  #when: inventory_hostname == groups['haproxy'][0]
+
+- name: Update kubeconfig server to HAProxy
+  replace:
+    path: "{{ kubeconfig_runner_path }}"
+    regexp: 'https://127\.0\.0\.1:6443'
+    replace: "https://{{ haproxy_ip }}:6443"
+  delegate_to: localhost
+  #when: inventory_hostname == groups['haproxy'][0]
+
+- name: Ensure ArgoCD namespace exists
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_runner_path }}"
+    api_version: v1
+    kind: Namespace
+    name: "{{ argocd_namespace }}"
+    state: present
+  delegate_to: localhost
+  #when: inventory_hostname == groups['haproxy'][0]
+
+- name: Label argocd namespace for Istio injection
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_runner_path }}"
+    state: present
+    kind: Namespace
+    name: "{{ argocd_namespace }}"
+    definition:
+      metadata:
+        name: "{{ argocd_namespace }}"
+        labels:
+          istio-injection: enabled
+  delegate_to: localhost
+
+- name: Wait for namespace to be active
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_runner_path }}"
+    kind: Namespace
+    name: "{{ argocd_namespace }}"
+  register: ns
+  until: ns.resources | length > 0
+  retries: 10
+  delay: 3
+  delegate_to: localhost
+  #when: inventory_hostname == groups['haproxy'][0]
+
+- name: Create working directory
+  ansible.builtin.file:
+    path: "{{ work_dir }}"
+    state: directory
+    mode: '0755'
+
+# -----------------------------------
+# Download Argo CD install.yaml
+# -----------------------------------
+- name: Download Argo CD manifest
+  ansible.builtin.get_url:
+    url: https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+    dest: "{{ work_dir }}/install.yaml"
+    mode: '0644'
+
+- name: Copy template file to destination
+  ansible.builtin.template:
+    src: kustomization.yaml.j2
+    dest: "{{ work_dir }}/kustomization.yaml"
+    mode: '0644'
+
+
+- name: Copy file to destination
+  ansible.builtin.copy:
+    src: files/patch.yml
+    dest: "{{ work_dir }}/patch.yml"
+    mode: '0644'
+
+- name: Apply Argo CD kustomize
+  ansible.builtin.command:
+    cmd: kubectl apply -k {{ work_dir }} -n argocd --wait=true --server-side
+  environment:
+    KUBECONFIG: "{{ kubeconfig_runner_path }}"
+  register: result
+  changed_when: "'created' in result.stdout or 'configured' in result.stdout"
+
+- name: Show output
+  ansible.builtin.debug:
+    msg: "{{ result.stdout | default('no output') }}"
+
+- name: Apply all ApplicationSets in files directory
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ item }}"
+    kubeconfig: "{{ kubeconfig_runner_path }}"
+  loop: "{{ lookup('fileglob', role_path + '/manifest/*.yml', wantlist=True) }}"
+  delegate_to: localhost
+
+- name: Wait for ArgoCD server to be ready
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_runner_path }}"
+    kind: Pod
+    namespace: "{{ argocd_namespace }}"
+  register: argocd_pods
+  retries: 20
+  delay: 15
+  until: >
+    argocd_pods.resources | selectattr('status.phase','equalto','Running') | list | length > 2
+  delegate_to: localhost
+
+- name: Get ArgoCD admin password secret
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_runner_path }}"
+    kind: Secret
+    namespace: "{{ argocd_namespace }}"
+    name: argocd-initial-admin-secret
+  register: argocd_secret
+  delegate_to: localhost
+  no_log: true
+
+- name: Decode password
+  set_fact:
+    argocd_admin_password: "{{ argocd_secret.resources[0].data.password | b64decode }}"
+  delegate_to: localhost
+  no_log: true
+
+- name: Show ArgoCD password
+  debug:
+    msg: "ArgoCD admin password: {{ argocd_admin_password }}"
+  delegate_to: localhost
+
+- name: Patch ArgoCD service to NodePort
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_runner_path }}"
+    kind: Service
+    namespace: "{{ argocd_namespace }}"
+    name: argocd-server
+    definition:
+      spec:
+        type: ClusterIP
+  delegate_to: localhost
+
+
+- name: Apply all ApplicationSets in files directory
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ item }}"
+    kubeconfig: "{{ kubeconfig_runner_path }}"
+  loop: "{{ query('fileglob', role_path ~ '/repo_access/*.yml') }}"
+  delegate_to: localhost
+
+- name: Apply all ApplicationSets in files directory
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ item }}"
+    kubeconfig: "{{ kubeconfig_runner_path }}"
+  loop: "{{ query('fileglob', role_path ~ '/appset-files/*.yml') }}"
+  #loop: "{{ lookup('fileglob', apps_dir + '/*.yml', wantlist=True) }}"
+  delegate_to: localhost

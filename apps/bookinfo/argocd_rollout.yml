@@ -1,0 +1,61 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: reviews
+  namespace: bookinfo
+spec:
+  replicas: 3
+
+  selector:
+    matchLabels:
+      app: reviews
+
+  template:
+    metadata:
+      labels:
+        app: reviews
+    spec:
+      serviceAccountName: bookinfo-reviews
+      containers:
+      - name: reviews
+        image: docker.io/istio/examples-bookinfo-reviews-v3:1.20.3
+        ports:
+        - containerPort: 9080
+
+  strategy:
+    canary:
+      stableService: reviews
+      canaryService: reviews-canary
+
+      trafficRouting:
+        istio:
+          virtualService:
+            name: reviews
+            routes:
+            - primary
+
+      steps:
+
+      - setWeight: 10
+  
+      - pause:
+          duration: 30s
+
+      - setWeight: 25
+  
+      - pause:
+          duration: 1m
+      - analysis:
+          templates:
+          - templateName: reviews-production-analysis
+
+      - setWeight: 50
+
+      - pause:
+          duration: 2m
+
+      - analysis:
+          templates:
+          - templateName: reviews-production-analysis
+
+      - setWeight: 100

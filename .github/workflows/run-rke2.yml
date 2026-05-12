@@ -1,0 +1,41 @@
+name: RKE2 install
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ansible-run:
+    runs-on: self-hosted
+    env:
+      ANSIBLE_CONFIG: ./ansible-playbook/ansible.cfg
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+      
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 python3-venv python3-pip
+
+      - name: Create venv
+        run: python3 -m venv .venv
+      
+      - name: Install Python deps
+        run: |
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install ansible kubernetes openshift
+
+      - name: Verify kubernetes
+        run: |
+          .venv/bin/python -c "import kubernetes; print('OK')"
+
+      - name: Install Ansible Galaxy roles
+        working-directory: ansible-playbook
+        run: |
+          ../.venv/bin/ansible-galaxy install -r roles/requirements.yml -p roles
+
+      - name: Run Ansible
+        working-directory: ansible-playbook
+        run: |
+          ../.venv/bin/ansible-playbook -i inventory/hosts.yml install.yml

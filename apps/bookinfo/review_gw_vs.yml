@@ -1,0 +1,47 @@
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: reviews
+  namespace: bookinfo
+spec:
+  host: reviews
+
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 50
+
+      http:
+        http1MaxPendingRequests: 20
+        maxRequestsPerConnection: 10
+
+    outlierDetection:
+      consecutive5xxErrors: 3
+      interval: 5s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: reviews
+  namespace: bookinfo
+spec:
+  hosts:
+  - reviews
+
+  http:
+  - name: primary
+    route:
+    - destination:
+        host: reviews
+        port:
+          number: 9080
+      weight: 100
+
+    - destination:
+        host: reviews-canary
+        port:
+          number: 9080
+      weight: 0

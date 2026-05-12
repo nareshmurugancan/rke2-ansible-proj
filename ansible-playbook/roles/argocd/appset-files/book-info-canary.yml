@@ -1,0 +1,37 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: sample-apps
+  namespace: argocd
+
+spec:
+  generators:
+    - git:
+        repoURL: https://github.com/nareshkumarmurugan1988/my-k8s-platform.git
+        revision: develop
+        directories:
+          - path: apps/bookinfo
+
+  template:
+    metadata:
+      name: '{{path.basename}}'
+
+    spec:
+      project: default
+
+      source:
+        repoURL: https://github.com/nareshkumarmurugan1988/my-k8s-platform.git
+        targetRevision: develop
+        path: '{{path}}'
+
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{path.basename}}'
+
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true

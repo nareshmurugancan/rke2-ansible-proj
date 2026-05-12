@@ -1,0 +1,8 @@
+---
+rke2_node_type: server
+
+rke2_tls_sans:
+  - 192.168.2.250
+
+ansible_python_interpreter: /usr/bin/python3
+rke2_api_endpoint: "https://192.168.2.250:6443"

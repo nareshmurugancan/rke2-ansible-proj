@@ -1,0 +1,51 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: istio-addons
+  namespace: argocd
+
+spec:
+  generators:
+    - list:
+        elements:
+          - name: prometheus
+            path: apps/istio-addons/prometheus
+            wave: "3"
+
+          - name: grafana
+            path: apps/istio-addons/grafana
+            wave: "3"
+
+          - name: jaeger
+            path: apps/istio-addons/jaeger
+            wave: "3"
+
+          - name: kiali
+            path: apps/istio-addons/kiali
+            wave: "3"
+
+  template:
+    metadata:
+      name: '{{name}}'
+      annotations:
+        argocd.argoproj.io/sync-wave: "{{wave}}"
+
+    spec:
+      project: default
+
+      source:
+        repoURL: https://github.com/nareshkumarmurugan1988/my-k8s-platform.git
+        targetRevision: develop
+        path: '{{path}}'
+
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: istio-system
+
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true

@@ -1,0 +1,231 @@
+---
+- name: Install HAProxy on bastion
+  hosts: haproxy
+  become: true
+  roles:
+    - role: haproxy
+      when: haproxy_enabled | default(false)
+
+# - name: RKE2 play
+#   hosts: rke2_cluster
+#   any_errors_fatal: true
+#   become: true
+#   roles:
+#     - role: rke2_repo
+
+- name: Ensure config directory exists
+  hosts: all
+  become: true
+  tasks:
+    - name: Create rke2 config directory
+      ansible.builtin.file:
+        path: /etc/rancher/rke2
+        state: directory
+        mode: "0755"
+
+    - name: Ensure config file exists
+      ansible.builtin.file:
+        path: "{{ rke2_config_file }}"
+        state: touch
+        mode: "0600"
+
+    # Determine first master dynamically (safer than 'masters' group assumption)
+    - name: Set first master fact
+      set_fact:
+        is_first_master: "{{ inventory_hostname == groups['rke2_servers'][0] }}"
+    
+    # ✅ Update server endpoint (skip first master)
+    - name: Set server endpoint to HAProxy
+      ansible.builtin.lineinfile:
+        path: "{{ rke2_config_file }}"
+        regexp: '^server:\s+https://.*:9345'
+        line: "server: {{ rke2_cluster_join_endpoint }}"
+        backrefs: false
+
+    - name: Ensure tls-san header exists after token
+      ansible.builtin.lineinfile:
+        path: "{{ rke2_config_file }}"
+        insertafter: '^token:'
+        line: "tls-san:"
+        state: present
+
+    - name: Add HAProxy IP under tls-san
+      ansible.builtin.lineinfile:
+        path: "{{ rke2_config_file }}"
+        insertafter: '^tls-san:'
+        line: "  - {{ haproxy_ip }}"
+        state: present
+      notify: Restart rke2-server
+
+    # ✅ Update kubeconfig API endpoint (run only on servers)
+    - name: Update kubeconfig server endpoint
+      replace:
+        path: "{{ rke2_kubeconfig }}"
+        regexp: 'https://.*:6443'
+        replace: "{{ rke2_api_endpoint }}"
+      when: inventory_hostname in groups['rke2_servers']
+
+
+    # ✅ Update kubeconfig API endpoint (run only on servers)
+    - name: Update kubeconfig server endpoint in /root/.kube/config
+      replace:
+        path: "{{ kubeconfig }}"
+        regexp: 'https://.*:6443'
+        replace: "{{ rke2_api_endpoint }}"
+      when: inventory_hostname in groups['rke2_servers']
+ 
+  handlers:
+    - name: Restart rke2-server
+      ansible.builtin.systemd:
+        name: rke2-server
+        state: restarted
+
+
+- name: Install Istio using Helm
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    istio_version: 1.29.2
+    istio_repo: https://istio-release.storage.googleapis.com/charts
+    istio_namespace: istio-system
+    gateway_namespace: istio-system
+    gateway_service_type: LoadBalancer   # change to LoadBalancer if needed
+
+  tasks:
+
+    - name: Add Istio Helm repo
+      ansible.builtin.command: >
+        helm repo add istio {{ istio_repo }}
+      changed_when: false
+
+    - name: Update Helm repos
+      ansible.builtin.command: helm repo update
+      changed_when: false
+
+    - name: Create istio-system namespace
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_runner_path }}"
+        name: "{{ istio_namespace }}"
+        api_version: v1
+        kind: Namespace
+        state: present
+
+    # -------------------
+    # istio-base (CRDs)
+    # -------------------
+    - name: Install istio-base
+      ansible.builtin.command: >
+        helm upgrade --install istio-base istio/base
+        -n {{ istio_namespace }}
+        --create-namespace 
+      environment:
+          KUBECONFIG: "{{ kubeconfig_runner_path }}"
+      changed_when: true
+
+    # -------------------
+    # istiod (control plane)
+    # -------------------
+    - name: Install istiod
+      ansible.builtin.command: >
+        helm upgrade --install istiod istio/istiod
+        -n {{ istio_namespace }}
+        --version {{ istio_version }}
+        --set meshConfig.accessLogFile=/dev/stdout -f istio-yaml/istio-values.yaml
+      environment:
+          KUBECONFIG: "{{ kubeconfig_runner_path }}"
+      changed_when: true
+
+    # -------------------
+    # ingress gateway
+    # -------------------
+    - name: Install Istio ingress gateway
+      ansible.builtin.command: >
+        helm upgrade --install istio-ingressgateway istio/gateway
+        -n {{ gateway_namespace }}
+        --version {{ istio_version }}
+        --set service.type={{ gateway_service_type }}
+      environment:
+          KUBECONFIG: "{{ kubeconfig_runner_path }}"  
+      changed_when: true
+
+
+
+- name: Generate wildcard TLS certificate and import into Kubernetes
+  hosts: localhost
+  gather_facts: no
+
+  vars:
+    cert_dir: /tmp/wildcard-cert
+    k8s_namespace: istio-system
+    secret_name: wildcard-local-tls
+    domain: "*.local"
+
+  tasks:
+
+    - name: Create cert directory
+      file:
+        path: "{{ cert_dir }}"
+        state: directory
+
+    - name: Create OpenSSL config for wildcard
+      copy:
+        dest: "{{ cert_dir }}/openssl.cnf"
+        content: |
+          [req]
+          default_bits       = 2048
+          prompt             = no
+          default_md         = sha256
+          distinguished_name = dn
+          req_extensions     = req_ext
+
+          [dn]
+          CN = *.local
+
+          [req_ext]
+          subjectAltName = @alt_names
+
+          [alt_names]
+          DNS.1 = *.local
+          DNS.2 = local
+
+    - name: Generate private key
+      command: >
+        openssl genrsa -out {{ cert_dir }}/wildcard.key 2048
+      args:
+        creates: "{{ cert_dir }}/wildcard.key"
+
+    - name: Generate self-signed certificate
+      command: >
+        openssl req -x509 -nodes -days 365
+        -key {{ cert_dir }}/wildcard.key
+        -out {{ cert_dir }}/wildcard.crt
+        -config {{ cert_dir }}/openssl.cnf
+      args:
+        creates: "{{ cert_dir }}/wildcard.crt"
+
+    - name: Create Kubernetes TLS secret
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_runner_path }}"
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "{{ secret_name }}"
+            namespace: "{{ k8s_namespace }}"
+          type: kubernetes.io/tls
+          data:
+            tls.crt: "{{ lookup('file', cert_dir + '/wildcard.crt') | b64encode }}"
+            tls.key: "{{ lookup('file', cert_dir + '/wildcard.key') | b64encode }}" 
+      delegate_to: localhost
+
+- name: Install ArgoCD
+  hosts: localhost
+  become: true
+  roles:
+    - role: argocd
+      when: argocd_enabled | default(false)
+
+
+

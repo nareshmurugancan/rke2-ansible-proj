@@ -1,0 +1,49 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: istio
+  namespace: argocd
+spec:
+  generators:
+    - list:
+        elements:
+          - name: base
+            chart: base
+            namespace: istio-system
+            wave: "0"
+
+          - name: istiod
+            chart: istiod
+            namespace: istio-system
+            wave: "1"
+
+          - name: gateway
+            chart: gateway
+            namespace: istio-system
+            wave: "2"
+
+  template:
+    metadata:
+      name: istio-{{name}}
+      annotations:
+        argocd.argoproj.io/sync-wave: "{{wave}}"
+
+    spec:
+      project: default
+
+      source:
+        repoURL: https://istio-release.storage.googleapis.com/charts
+        chart: "{{chart}}"
+        targetRevision: 1.22.0
+
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "{{namespace}}"
+
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true

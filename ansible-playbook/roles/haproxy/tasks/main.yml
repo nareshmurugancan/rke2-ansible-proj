@@ -1,0 +1,4 @@
+# roles/haproxy/tasks/main.yml
+---
+- ansible.builtin.include_tasks: install.yml
+

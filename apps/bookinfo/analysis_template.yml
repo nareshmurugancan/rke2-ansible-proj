@@ -1,0 +1,57 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: reviews-production-analysis
+spec:
+  metrics:
+
+  # 1. Traffic Gate
+  - name: traffic-gate
+    interval: 1m
+    count: 3
+    failureLimit: 3
+    successCondition: result[0] > 5
+    provider:
+      prometheus:
+        address: http://prometheus.istio-system.svc.cluster.local:9090
+        query: |
+          sum(rate(istio_requests_total{destination_service_name="reviews"}[5m]))
+
+  # 2. Error Rate (SLO)
+  - name: error-rate
+    interval: 2m
+    count: 5
+    failureLimit: 3
+    successCondition: result[0] < 0.01
+    provider:
+      prometheus:
+        address: http://prometheus.istio-system.svc.cluster.local:9090
+        query: |
+          sum(rate(istio_requests_total{
+            destination_service_name="reviews",
+            response_code=~"5.*"
+          }[5m]))
+          /
+          clamp_min(
+            sum(rate(istio_requests_total{
+              destination_service_name="reviews"
+            }[5m])),
+            1
+          )
+
+  # 3. Latency SLO
+  - name: latency-p95
+    interval: 2m  
+    count: 5
+    failureLimit: 3
+    successCondition: result[0] < 0.3
+    provider:
+      prometheus:
+        address: http://prometheus.istio-system.svc.cluster.local:9090
+        query: |
+          histogram_quantile(0.95,
+            sum(rate(istio_request_duration_milliseconds_bucket{
+              destination_service_name="reviews"
+            }[5m])) by (le)
+          ) / 1000

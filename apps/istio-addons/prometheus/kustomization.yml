@@ -1,0 +1,16 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - https://raw.githubusercontent.com/istio/istio/release-1.29/samples/addons/prometheus.yaml
+  - prometheus-vs.yaml
+# patchesJson6902:
+#   - target:
+#       group: apps
+#       version: v1
+#       kind: Deployment
+#       name: prometheus
+#       namespace: istio-system
+#     path: prometheus-json-patch.yaml
+

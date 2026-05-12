@@ -1,0 +1,11 @@
+global:
+  hub: docker.io/istio
+  tag: 1.29.2
+
+meshConfig:
+  enableTracing: true
+  defaultConfig:
+    tracing:
+      sampling: 100.0
+      zipkin:
+        address: jaeger-collector.istio-system.svc.cluster.local:9411

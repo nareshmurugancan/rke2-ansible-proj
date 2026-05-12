@@ -1,0 +1,18 @@
+---
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: github-app-repo
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: repository
+type: Opaque
+stringData:
+  url: "repourl"
+  githubAppID: "xxxxx"
+  githubAppPrivateKey: |
+    -----BEGIN RSA PRIVATE KEY-----
+    xxxxxxxxxx
+    xxxxxxxxxx
+    -----END RSA PRIVATE KEY-----

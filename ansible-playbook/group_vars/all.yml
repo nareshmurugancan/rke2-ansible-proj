@@ -1,0 +1,21 @@
+---
+ansible_python_interpreter: "{{ lookup('env','GITHUB_WORKSPACE') }}/.venv/bin/python3"
+#ansible_python_interpreter: /usr/bin/python3
+haproxy_enabled: true
+haproxy_ip: 192.168.2.250
+rke2_api_endpoint: "https://192.168.2.250:6443"
+rke2_cluster_join_endpoint: "https://192.168.2.250:9345"
+
+rke2_config_file: /etc/rancher/rke2/config.yaml
+rke2_kubeconfig: /etc/rancher/rke2/rke2.yaml
+#rke2_token: "CHANGE_ME"
+kubeconfig: /root/.kube/config
+
+
+kubeconfig_runner_path: /var/lib/kubeconfig.yaml
+
+argocd_enabled: true
+argocd_namespace: argocd
+argocd_version: stable
+repo_root: "{{ lookup('env','GITHUB_WORKSPACE') }}"
+apps_dir: "{{ repo_root }}/apps"

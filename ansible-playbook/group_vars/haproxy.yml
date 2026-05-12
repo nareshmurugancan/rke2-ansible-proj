@@ -1,0 +1,4 @@
+---
+haproxy_enabled: true
+haproxy_ip: 192.168.2.250
+rke2_api_endpoint: "https://192.168.2.250:6443"

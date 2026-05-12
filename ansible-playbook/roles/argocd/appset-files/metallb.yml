@@ -1,0 +1,44 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: metallb
+  namespace: argocd
+spec:
+  generators:
+    - list:
+        elements:
+          - name: metallb-install
+            path: apps/metallb/base
+            namespace: metallb-system
+            wave: "0"
+
+          - name: metallb-config
+            path: apps/metallb/config
+            namespace: metallb-system
+            wave: "1"
+
+  template:
+    metadata:
+      name: '{{name}}'
+      annotations:
+        argocd.argoproj.io/sync-wave: "{{wave}}"
+
+    spec:
+      project: default
+
+      source:
+        repoURL: https://github.com/nareshkumarmurugan1988/my-k8s-platform.git
+        targetRevision: develop
+        path: '{{path}}'
+
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{namespace}}'
+
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true

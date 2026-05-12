@@ -1,0 +1,37 @@
+# roles/haproxy/templates/haproxy.cfg.j2
+global
+    log /dev/log local0
+    maxconn 2048
+
+defaults
+    log global
+    mode tcp
+    option tcplog
+    timeout connect 10s
+    timeout client  1m
+    timeout server  1m
+
+frontend kubernetes-api
+    bind *:6443
+    default_backend kubernetes-masters
+
+backend kubernetes-masters
+    balance roundrobin
+    option tcp-check
+{% for host in groups['rke2_servers'] %}
+    server {{ host }} {{ hostvars[host].ansible_host }}:6443 check
+{% endfor %}
+
+# -----------------------------
+# RKE2 Supervisor (JOIN PORT)
+# -----------------------------
+frontend rke2-supervisor
+    bind *:9345
+    default_backend rke2-servers
+
+backend rke2-servers
+    balance roundrobin
+    option tcp-check
+{% for host in groups['rke2_servers'] %}
+    server {{ host }} {{ hostvars[host].ansible_host }}:9345 check
+{% endfor %}

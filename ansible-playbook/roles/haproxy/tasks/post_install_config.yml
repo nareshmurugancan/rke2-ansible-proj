@@ -1,0 +1,50 @@
+---
+- name: Ensure config directory exists
+  file:
+    path: /etc/rancher/rke2
+    state: directory
+    mode: "0755"
+
+- name: Ensure config file exists
+  file:
+    path: "{{ rke2_config_file }}"
+    state: touch
+    mode: "0600"
+
+# Determine first master dynamically (safer than 'masters' group assumption)
+- name: Set first master fact
+  set_fact:
+    is_first_master: "{{ inventory_hostname == groups['rke2_servers'][0] }}"
+
+# ✅ Update server endpoint (skip first master)
+- name: Set server endpoint to HAProxy
+  lineinfile:
+    path: "{{ rke2_config_file }}"
+    regexp: '^server:\s+https://.*:9345'
+    line: "server: {{ rke2_cluster_join_endpoint }}"
+    backrefs: false
+  when: 
+    - not is_first_master
+    - inventory_hostname in groups['rke2_cluster']
+
+# - name: Ensure tls-san header exists after token
+#   lineinfile:
+#     path: "{{ rke2_config_file }}"
+#     insertafter: '^token:'
+#     line: "tls-san:"
+#     state: present
+
+# - name: Add HAProxy IP under tls-san
+#   lineinfile:
+#     path: "{{ rke2_config_file }}"
+#     insertafter: '^tls-san:'
+#     line: "  - {{ haproxy_ip }}"
+#     state: present
+
+# # ✅ Update kubeconfig API endpoint (run only on servers)
+# - name: Update kubeconfig server endpoint
+#   replace:
+#     path: "{{ kubeconfig_file }}"
+#     regexp: 'https://.*:6443'
+#     replace: "{{ rke2_api_endpoint }}"
+#   when: inventory_hostname in groups['rke2_servers']

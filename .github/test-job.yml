@@ -1,0 +1,23 @@
+name: Bastion Test Job
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: self-hosted   # 👈 your bastion runner
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run test script
+        run: |
+          chmod +x test-job.sh
+          ./test-job.sh > output.log 2>&1 &
+
+      - name: Show log
+        run: |
+          sleep 2
+          cat output.log
+          cat  /tmp/test

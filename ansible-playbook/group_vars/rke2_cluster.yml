@@ -1,0 +1,6 @@
+---
+rke2_version: v1.30.0+rke2r1
+haproxy_enabled: true
+haproxy_ip: 192.168.2.250
+rke2_api_endpoint: "https://192.168.2.250:6443"
+rke2_cluster_join_endpoint: "https://192.168.2.250:9345"

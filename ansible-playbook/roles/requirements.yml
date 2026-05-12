@@ -1,0 +1,5 @@
+---
+- name: rke2_repo
+  src: https://github.com/nareshmurugancan/rke2-role.git
+  scm: git
+  version: 1.0.1

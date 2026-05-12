@@ -1,0 +1,67 @@
+---
+---
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: bookinfo-gateway
+  namespace: bookinfo
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - "bookinfolab.local"
+    tls:
+     httpsRedirect: true
+  - port:
+      number: 443
+      name: https
+      protocol: HTTPS
+    hosts:
+    - "bookinfolab.local"
+    tls:
+      credentialName: wildcard-local-tls
+      maxProtocolVersion: TLSV1_3
+      minProtocolVersion: TLSV1_2
+      mode: SIMPLE
+      cipherSuites:
+        - ECDHE-ECDSA-AES128-GCM-SHA256
+        - ECDHE-RSA-AES128-GCM-SHA256
+        - ECDHE-ECDSA-AES128-SHA
+        - AES128-GCM-SHA256
+        - AES128-SHA
+        - ECDHE-ECDSA-AES256-GCM-SHA384
+        - ECDHE-RSA-AES256-GCM-SHA384
+        - ECDHE-ECDSA-AES256-SHA
+        - AES256-GCM-SHA384
+        - AES256-SHA
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: bookinfo
+  namespace: bookinfo
+spec:
+  hosts:
+    - "bookinfolab.local"
+  gateways:
+    - bookinfo-gateway
+  http:
+    - match:
+        - uri:
+            exact: /
+      redirect:
+        uri: /productpage
+
+    - match:
+        - uri:
+            prefix: /productpage
+      route:
+        - destination:
+            host: productpage
+            port:
+              number: 9080
