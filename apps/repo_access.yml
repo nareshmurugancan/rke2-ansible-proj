@@ -9,7 +9,7 @@ metadata:
     argocd.argoproj.io/secret-type: repository
 type: Opaque
 stringData:
-  url: "https://github.com/nareshmurugancan/rke2-ansible-proj.git"
+  url: "your repo" 
   githubAppID: "xxx"
   githubAppPrivateKey: |
     xxxx
